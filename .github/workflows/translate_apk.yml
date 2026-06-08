@@ -1,0 +1,74 @@
+name: "Gia Long Studio - APK Rebranding & Translation Tool"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  brand_exclusive_process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java Environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Tools and Dependencies
+        run: |
+          pip install deep-translator
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile Original APK
+        run: |
+          if [ ! -f "original.apk" ]; then
+            echo "LỖI: Không tìm thấy file original.apk ở thư mục gốc!"
+            exit 1
+          fi
+          apktool d original.apk -o decompiled_app
+
+      - name: Run Auto Translation Script
+        run: python translate_apk.py
+
+      - name: Recompile APK
+        run: apktool b decompiled_app -o translated_unsigned.apk
+
+      - name: Create Exclusive Brand Keystore & Sign APK
+        run: |
+          # 1. Tạo chứng chỉ bảo mật độc quyền (Xóa sạch dấu vết Android Debug mặc định)
+          keytool -genkey -v \
+            -keystore GialongStudio.keystore \
+            -storepass gialongmodder \
+            -alias gialong_exclusive_key \
+            -keypass gialongmodder \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Huynh Gia Long, OU=Premium Mods, O=Gia Long Studio, L=An Minh Bac, ST=Kien Giang, C=VN"
+
+          # 2. Ký số APK bằng chứng chỉ thương hiệu riêng
+          jarsigner -verbose \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -keystore GialongStudio.keystore \
+            -storepass gialongmodder \
+            translated_unsigned.apk \
+            gialong_exclusive_key
+
+          # 3. Đổi tên file thành phẩm theo brand riêng
+          mv translated_unsigned.apk ReflectMaster_GiaLong_Edition.apk
+
+      - name: Upload Exclusive Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReflectMaster_GiaLong_Studio_Release
+          path: ReflectMaster_GiaLong_Edition.apk
+          
