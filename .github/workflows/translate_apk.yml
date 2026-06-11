@@ -1,4 +1,4 @@
-name: "Gia Long Studio - Full Auto Translate & Build"
+name: "Gia Long Studio - Full Auto Translate & Fix"
 
 on:
   workflow_dispatch:
@@ -16,7 +16,6 @@ jobs:
           sudo apt-get install -y apktool default-jdk
           pip install deep-translator
 
-      # Bước này sẽ tự tạo file script cho bác, không cần upload nữa
       - name: Create Python Script
         run: |
           cat << 'EOF' > translate_apk.py
@@ -44,15 +43,23 @@ jobs:
           apktool d original.apk -o decompiled_app
           python translate_apk.py
 
-      - name: Recompile & Sign
+      - name: Fix Resource Names & Recompile
         run: |
+          # Fix lỗi file name ic_launcher_foreground_0.xml
+          find decompiled_app -name "*_0.xml" -exec rename 's/_0/_zero/' {} \; || true
+          
+          # Đóng gói APK
           apktool b decompiled_app -o unsigned.apk
+
+      - name: Sign APK
+        run: |
           keytool -genkey -v -keystore Gialong.keystore -storepass gia123 -alias gialong -keypass gia123 -dname "CN=GiaLongStudio" -keyalg RSA -keysize 2048 -validity 10000
           jarsigner -verbose -keystore Gialong.keystore -storepass gia123 -keypass gia123 unsigned.apk gialong
           mv unsigned.apk GiaLong_ReflectMaster_VN.apk
 
-      - name: Upload Finished APK
+      - name: Upload Final APK
         uses: actions/upload-artifact@v4
         with:
           name: Final_APK_GiaLong
           path: GiaLong_ReflectMaster_VN.apk
+          
