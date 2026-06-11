@@ -1,4 +1,4 @@
-name: "Gia Long Studio - Full Auto Translate & Fix"
+name: "Gia Long Studio - Premium APK Builder"
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
           sudo apt-get install -y apktool default-jdk
           pip install deep-translator
 
-      - name: Create Python Script
+      - name: Prepare Translation Script
         run: |
           cat << 'EOF' > translate_apk.py
           import os, re
@@ -31,29 +31,33 @@ jobs:
               for file in files:
                   if file.endswith(('.smali', '.xml')):
                       path = os.path.join(root, file)
-                      with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
-                      if any('\u4e00' <= char <= '\u9fa5' for char in content):
-                          new_content = chinese_pattern.sub(replace, content)
-                          with open(path, 'w', encoding='utf-8') as f: f.write(new_content)
+                      try:
+                          with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+                          if any('\u4e00' <= char <= '\u9fa5' for char in content):
+                              new_content = chinese_pattern.sub(replace, content)
+                              with open(path, 'w', encoding='utf-8') as f: f.write(new_content)
+                          except: continue
           EOF
 
       - name: Decompile & Translate
         run: |
           if [ ! -f "original.apk" ]; then echo "LỖI: Chưa có file original.apk"; exit 1; fi
-          apktool d original.apk -o decompiled_app
+          apktool d -f original.apk -o decompiled_app
           python translate_apk.py
 
-      - name: Fix Resource Names & Recompile
+      - name: Clean Junk Files (Fix AAPT Error)
         run: |
-          # Fix lỗi file name ic_launcher_foreground_0.xml
-          find decompiled_app -name "*_0.xml" -exec rename 's/_0/_zero/' {} \; || true
-          
-          # Đóng gói APK
-          apktool b decompiled_app -o unsigned.apk
+          # Diệt tận gốc tất cả các file rác bắt đầu bằng ._ trong toàn bộ thư mục app
+          find decompiled_app -name "._*" -type f -delete
+          echo "Đã quét sạch toàn bộ file ẩn hệ thống gây lỗi build!"
 
-      - name: Sign APK
+      - name: Recompile & Sign
         run: |
-          keytool -genkey -v -keystore Gialong.keystore -storepass gia123 -alias gialong -keypass gia123 -dname "CN=GiaLongStudio" -keyalg RSA -keysize 2048 -validity 10000
+          # Ép apktool build lại và làm mới hoàn toàn bản đồ tài nguyên resources.arsc
+          apktool b -f decompiled_app -o unsigned.apk
+          
+          # Ký số đóng dấu thương hiệu độc quyền
+          keytool -genkey -v -keystore Gialong.keystore -storepass gia123 -alias gialong -keypass gia123 -dname "CN=Huynh Gia Long, O=Gia Long Studio, C=VN" -keyalg RSA -keysize 2048 -validity 10000
           jarsigner -verbose -keystore Gialong.keystore -storepass gia123 -keypass gia123 unsigned.apk gialong
           mv unsigned.apk GiaLong_ReflectMaster_VN.apk
 
