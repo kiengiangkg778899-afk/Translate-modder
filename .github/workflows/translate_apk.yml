@@ -1,74 +1,58 @@
-name: "Gia Long Studio - APK Rebranding & Translation Tool"
+name: "Gia Long Studio - Full Auto Translate & Build"
 
 on:
   workflow_dispatch:
 
 jobs:
-  brand_exclusive_process:
+  build_all:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Java Environment
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '11'
-
-      - name: Set up Python Environment
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Tools and Dependencies
+      - name: Setup Tools
         run: |
-          pip install deep-translator
           sudo apt-get update
-          sudo apt-get install -y apktool
+          sudo apt-get install -y apktool default-jdk
+          pip install deep-translator
 
-      - name: Decompile Original APK
+      # Bước này sẽ tự tạo file script cho bác, không cần upload nữa
+      - name: Create Python Script
         run: |
-          if [ ! -f "original.apk" ]; then
-            echo "LỖI: Không tìm thấy file original.apk ở thư mục gốc!"
-            exit 1
-          fi
+          cat << 'EOF' > translate_apk.py
+          import os, re
+          from deep_translator import GoogleTranslator
+          translator = GoogleTranslator(source='auto', target='vi')
+          chinese_pattern = re.compile(r'"([^"\n]*[\u4e00-\u9fa5]+[^"\n]*)"')
+          def replace(match):
+              text = match.group(1)
+              try: return f'"{translator.translate(text)}"'
+              except: return f'"{text}"'
+          for root, _, files in os.walk('decompiled_app'):
+              for file in files:
+                  if file.endswith(('.smali', '.xml')):
+                      path = os.path.join(root, file)
+                      with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+                      if any('\u4e00' <= char <= '\u9fa5' for char in content):
+                          new_content = chinese_pattern.sub(replace, content)
+                          with open(path, 'w', encoding='utf-8') as f: f.write(new_content)
+          EOF
+
+      - name: Decompile & Translate
+        run: |
+          if [ ! -f "original.apk" ]; then echo "LỖI: Chưa có file original.apk"; exit 1; fi
           apktool d original.apk -o decompiled_app
+          python translate_apk.py
 
-      - name: Run Auto Translation Script
-        run: python translate_apk.py
-
-      - name: Recompile APK
-        run: apktool b decompiled_app -o translated_unsigned.apk
-
-      - name: Create Exclusive Brand Keystore & Sign APK
+      - name: Recompile & Sign
         run: |
-          # 1. Tạo chứng chỉ bảo mật độc quyền (Xóa sạch dấu vết Android Debug mặc định)
-          keytool -genkey -v \
-            -keystore GialongStudio.keystore \
-            -storepass gialongmodder \
-            -alias gialong_exclusive_key \
-            -keypass gialongmodder \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Huynh Gia Long, OU=Premium Mods, O=Gia Long Studio, L=An Minh Bac, ST=Kien Giang, C=VN"
+          apktool b decompiled_app -o unsigned.apk
+          keytool -genkey -v -keystore Gialong.keystore -storepass gia123 -alias gialong -keypass gia123 -dname "CN=GiaLongStudio" -keyalg RSA -keysize 2048 -validity 10000
+          jarsigner -verbose -keystore Gialong.keystore -storepass gia123 -keypass gia123 unsigned.apk gialong
+          mv unsigned.apk GiaLong_ReflectMaster_VN.apk
 
-          # 2. Ký số APK bằng chứng chỉ thương hiệu riêng
-          jarsigner -verbose \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            -keystore GialongStudio.keystore \
-            -storepass gialongmodder \
-            translated_unsigned.apk \
-            gialong_exclusive_key
-
-          # 3. Đổi tên file thành phẩm theo brand riêng
-          mv translated_unsigned.apk ReflectMaster_GiaLong_Edition.apk
-
-      - name: Upload Exclusive Signed APK
+      - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReflectMaster_GiaLong_Studio_Release
-          path: ReflectMaster_GiaLong_Edition.apk
-          
+          name: Final_APK_GiaLong
+          path: GiaLong_ReflectMaster_VN.apk
